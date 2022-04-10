@@ -1,14 +1,16 @@
 const mongoose = require('mongoose');
+const {
+  linkStatus: { ACTIVE },
+} = require('./constants');
 
-const ShareableLink = new mongoose.Schema({
+const ShareableLinkSchema = new mongoose.Schema({
   customUrl: {
     type: String,
     required: true,
     unique: true,
   },
-  name: {
+  description: {
     type: String,
-    required: true,
   },
   clicks: {
     type: Number,
@@ -17,10 +19,18 @@ const ShareableLink = new mongoose.Schema({
   status: {
     type: String,
     required: true,
+    default: ACTIVE,
   },
   repos: {
-    type: [],
+    type: Array,
     required: true,
+    validate: {
+      validator: function (v) {
+        console.log(v);
+        return v.length > 0;
+      },
+      message: () => `Repos cannot be empty!`,
+    },
   },
   dateCreated: {
     type: Date,
@@ -29,9 +39,16 @@ const ShareableLink = new mongoose.Schema({
   },
   expiryDate: {
     type: Date,
-    default: Date.now,
+    default: () => {
+      const date = new Date();
+      date.setDate(date.getDate() + 7);
+      return date;
+    },
     required: true,
   },
 });
 
-module.exports = ShareableLink = mongoose.model('shareableLink', ShareableLink);
+module.exports = ShareableLink = mongoose.model(
+  'shareableLink',
+  ShareableLinkSchema
+);

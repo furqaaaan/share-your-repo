@@ -6,11 +6,11 @@ const dev = {
     uri: `mongodb+srv://dev:${process.env.DB_PASSWORD}@syr-dev.o4v7l.mongodb.net/syr-dev?retryWrites=true&w=majority`,
   },
   jwt: {
-    secret: process.env.JWT_SECRET || somerandomsecret,
+    secret: process.env.JWT_SECRET || "somerandomsecret",
     expiry: 3600000,
   },
   encryption: {
-    key: process.env.ENCRYPTION_KEY || someran12asdf1231asdfdomkey,
+    key: process.env.ENCRYPTION_KEY || "someran12asdf1231asdfdomkey",
   },
   github: {
     clientId: process.env.GITHUB_CLIENT_ID,

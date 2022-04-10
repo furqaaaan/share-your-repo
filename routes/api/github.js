@@ -4,8 +4,10 @@ const axios = require('axios');
 const authUtil = require('../../utils/authUtil');
 const config = require('../../config/config');
 const AuthToken = require('../../models/AuthToken');
-const { GITHUB } = require('../../models/hostTypes');
 const auth = require('../../middleware/auth');
+const Buffer = require('buffer').Buffer;
+const { getUserRepos } = require('../../services/github.service');
+
 
 const clientId = config.github.clientId;
 const clientSecret = config.github.clientSecret;
@@ -14,7 +16,6 @@ const clientSecret = config.github.clientSecret;
 // @desc    Get oauth token from github
 // @access  private
 router.post('/authorize', auth, async (req, res) => {
-  const user = req.user;
   const { code } = req.body;
 
   try {
@@ -62,7 +63,20 @@ router.post('/authorize', auth, async (req, res) => {
 // @route   GET /api/github/user/repos
 // @desc    Get authenticated user's repositories
 // @access  private
-router.get('/user/repos', auth, async (req, res) => {
+router.get('/user/repos', auth, async (req, res, next) => {
+  try {
+    const repos = await getUserRepos(req.user);
+    res.json(repos);
+  } catch (err) {
+    console.error(err);
+    next(err);
+  }
+});
+
+// @route   GET /api/github/repos/*
+// @desc    Get contents of a repo by path
+// @access  private
+router.get('/repos*', auth, async (req, res) => {
   let encToken = await AuthToken.findOne({
     user: req.user.id,
     host: GITHUB,
@@ -79,8 +93,9 @@ router.get('/user/repos', auth, async (req, res) => {
     const config = {
       headers: { Authorization: `Bearer ${decryptedToken}` },
     };
+
     const response = await axios.get(
-      'https://api.github.com/user/repos',
+      `https://api.github.com${req.url}`,
       config
     );
 
@@ -88,21 +103,18 @@ router.get('/user/repos', auth, async (req, res) => {
       return res.status(400).json({ msg: 'error getting repos' });
     }
 
-    // const repos = [];
-    // for (const repo of response.data) {
-    //   const { id, name, full_name, html_url } = repo;
-    //   repos.push({ id, name, full_name, html_url });
-    // }
-    // same as below
-
-    const repos = response.data.map((repo) => {
-      const { id, name, full_name, html_url } = repo;
-      return { id, name, full_name, html_url };
-    });
-
-    res.json(repos);
+    if (response.data.constructor === Array) {
+      const repos = response.data.map((repo) => {
+        const { name, path, type } = repo;
+        return { name, path, type };
+      });
+      res.json(repos);
+    } else if (response.data.content) {
+      let buf = Buffer.from(response.data.content, 'base64').toString('ascii');
+      res.json({ content: buf });
+    }
   } catch (err) {
-    console.error(err.response);
+    console.error(err);
     if (err.response.status === 401) {
       await AuthToken.findOneAndRemove({
         _id: encToken.id,
