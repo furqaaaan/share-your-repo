@@ -1,7 +1,9 @@
+var express = require('express');
+var router = express.Router();
+const axios = require('axios');
 const { check, validationResult } = require('express-validator');
 const auth = require('../../middleware/auth');
 const ShareableLink = require('../../models/ShareableLink');
-const router = require('./github');
 const { customAlphabet } = require('nanoid');
 const {
   getUserRepos,
@@ -12,6 +14,7 @@ const {
   NotFound,
   BadRequest,
   Unauthorized,
+  GeneralError,
 } = require('../../utils/errors');
 const {
   linkStatus: { DEACTIVATED },
@@ -43,22 +46,31 @@ router.post(
       const userRepos = await getUserRepos(req.user.id);
 
       // verify that user repos exist
-      const invalidRepos = repos.filter((repoId) => {
-        const repoIdFound = userRepos.find((userRepo) => userRepo.id == repoId);
-        if (!repoIdFound) {
-          return repoId;
-        }
-      });
+      // const invalidRepos = repos.filter((repoId) => {
+      //   const repoIdFound = userRepos.find((userRepo) => userRepo.id == repoId);
+      //   if (!repoIdFound) {
+      //     return repoId;
+      //   }
+      // });
 
-      if (invalidRepos.length > 0) {
-        throw new BadRequest(`Invalid repository IDs: ${invalidRepos}`);
-      }
+      // if (invalidRepos.length > 0) {
+      //   throw new BadRequest(`Invalid repository IDs: ${invalidRepos}`);
+      // }
+
+      const repoNameIdMap = userRepos
+        .filter((userRepo) => {
+          return repos.some((repo) => repo == userRepo.id);
+        })
+        .map((userRepo) => ({
+          id: userRepo.id,
+          full_name: userRepo.full_name,
+        }));
 
       const url = new ShareableLink({
         user: req.user.id,
         customUrl: customUrl || nanoid(),
         description: description,
-        repos: repos,
+        repos: repoNameIdMap,
         expiryDate: expiryDate,
       });
 
@@ -161,7 +173,6 @@ router.post('/:custom_url/deactivate', [auth], async (req, res, next) => {
 // @access  private
 router.delete('/:custom_url', [auth], async (req, res, next) => {
   try {
-
     if (req.params.custom_url) {
       var url = await ShareableLink.findOne({
         customUrl: req.params.custom_url,
@@ -188,6 +199,59 @@ router.delete('/:custom_url', [auth], async (req, res, next) => {
     res.json({ msg: 'Shareable Link deleted' });
   } catch (error) {
     next(error);
+  }
+});
+
+// @route   GET /api/share/repos/:custom_url*
+// @desc    Get contents of a repo by path
+// @access  public
+// router.get('/:custom_url/contents/:owner/:repo', async (req, res, next) => {
+router.get('/:custom_url/contents/:repo_id', async (req, res, next) => {
+  try {
+    if (req.params.custom_url) {
+      var url = await ShareableLink.findOne({
+        customUrl: req.params.custom_url,
+      });
+      if (!url) {
+        throw new NotFound('Link not found');
+      }
+    }
+
+    let repo_id = req.params.repo_id;
+    const repo = url.repos.find((r) => r.id == repo_id);
+    if (!repo) {
+      throw new BadRequest('Invalid repo id');
+    }
+    const decryptedToken = await getUserOauthToken(url.user.toString());
+    console.log(decryptedToken);
+    const config = {
+      headers: { Authorization: `Bearer ${decryptedToken}` },
+    };
+
+    let filepath = req.query.filepath || '';
+    const response = await axios.get(
+      `https://api.github.com/repos/${repo.full_name}/contents/${filepath}`,
+      config
+    );
+
+    if (response.status !== 200) {
+      console.log(response);
+      throw new GeneralError();
+    }
+
+    if (response.data.constructor === Array) {
+      const repos = response.data.map((repo) => {
+        const { name, path, type } = repo;
+        return { name, path, type };
+      });
+      res.json(repos);
+    } else if (response.data.content) {
+      let buf = Buffer.from(response.data.content, 'base64').toString('ascii');
+      res.json({ content: buf });
+    }
+  } catch (err) {
+    console.error(err);
+    next(err);
   }
 });
 

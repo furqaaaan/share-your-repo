@@ -13,6 +13,7 @@ const {
 const {
   host: { GITHUB },
 } = require('../../models/constants');
+const { GeneralError } = require('../../utils/errors');
 
 const clientId = config.github.clientId;
 const clientSecret = config.github.clientSecret;
@@ -81,10 +82,9 @@ router.get('/user/repos', auth, async (req, res, next) => {
 // @route   GET /api/github/repos/*
 // @desc    Get contents of a repo by path
 // @access  private
-router.get('/repos*', auth, async (req, res) => {
-  console.log(req);
-  const decryptedToken = await getUserOauthToken(req.user.id);
+router.get('/repos*', auth, async (req, res, next) => {
   try {
+    const decryptedToken = await getUserOauthToken(req.user.id);
     const config = {
       headers: { Authorization: `Bearer ${decryptedToken}` },
     };
@@ -95,7 +95,7 @@ router.get('/repos*', auth, async (req, res) => {
     );
 
     if (response.status !== 200) {
-      return res.status(400).json({ msg: 'error getting repos' });
+      throw new GeneralError('/github/repos*');
     }
 
     if (response.data.constructor === Array) {
@@ -109,14 +109,7 @@ router.get('/repos*', auth, async (req, res) => {
       res.json({ content: buf });
     }
   } catch (err) {
-    console.error(err);
-    if (err.response.status === 401) {
-      await AuthToken.findOneAndRemove({
-        _id: encToken.id,
-      });
-      return res.status(401).json({ msg: 'token expired' });
-    }
-    res.status(500).send('Server error');
+    next(err);
   }
 });
 

@@ -4,6 +4,7 @@ const {
 } = require('..//models/constants');
 const authUtil = require('../utils/authUtil');
 const axios = require('axios');
+const AuthToken = require('../models/AuthToken');
 
 exports.getUserRepos = async (userId) => {
   const decryptedToken = await this.getUserOauthToken(userId);
@@ -33,8 +34,8 @@ exports.getUserRepos = async (userId) => {
   // same as below
 
   const repos = response.data.map((repo) => {
-    const { id, name, full_name, html_url } = repo;
-    return { id, name, full_name, html_url };
+    const { id, name, full_name, html_url, permissions } = repo;
+    return { id, name, full_name, html_url, permissions };
   });
 
   return repos;
