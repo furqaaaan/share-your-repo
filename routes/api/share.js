@@ -3,8 +3,16 @@ const auth = require('../../middleware/auth');
 const ShareableLink = require('../../models/ShareableLink');
 const router = require('./github');
 const { customAlphabet } = require('nanoid');
-const { getUserRepos } = require('../../services/github.service');
-const { Conflict, NotFound, BadRequest } = require('../../utils/errors');
+const {
+  getUserRepos,
+  getUserOauthToken,
+} = require('../../services/github.service');
+const {
+  Conflict,
+  NotFound,
+  BadRequest,
+  Unauthorized,
+} = require('../../utils/errors');
 const {
   linkStatus: { DEACTIVATED },
 } = require('../../models/constants');
@@ -32,7 +40,7 @@ router.post(
         }
       }
       const { customUrl, repos, description, expiryDate } = req.body;
-      const userRepos = await getUserRepos(req.user);
+      const userRepos = await getUserRepos(req.user.id);
 
       // verify that user repos exist
       const invalidRepos = repos.filter((repoId) => {
@@ -47,6 +55,7 @@ router.post(
       }
 
       const url = new ShareableLink({
+        user: req.user.id,
         customUrl: customUrl || nanoid(),
         description: description,
         repos: repos,
@@ -77,6 +86,10 @@ router.put('/:custom_url', [auth], async (req, res, next) => {
       }
     }
 
+    if (url.user.toString() !== req.user.id) {
+      throw new Unauthorized();
+    }
+
     const { customUrl, repos, description, expiryDate } = req.body;
 
     // If updating custom url, check if already exists
@@ -90,7 +103,7 @@ router.put('/:custom_url', [auth], async (req, res, next) => {
     }
 
     // verify that user repos exist
-    const userRepos = await getUserRepos(req.user);
+    const userRepos = await getUserRepos(req.user.id);
     const invalidRepos = repos.filter((repoId) => {
       const repoIdFound = userRepos.find((userRepo) => userRepo.id == repoId);
       if (!repoIdFound) {
@@ -114,6 +127,7 @@ router.put('/:custom_url', [auth], async (req, res, next) => {
     await url.save();
     res.json(url);
   } catch (error) {
+    console.log(error);
     next(error);
   }
 });
@@ -137,6 +151,41 @@ router.post('/:custom_url/deactivate', [auth], async (req, res, next) => {
 
     await url.save();
     res.json(url);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   DELETE /api/share/:custom_url
+// @desc    Deactivate shareable link
+// @access  private
+router.delete('/:custom_url', [auth], async (req, res, next) => {
+  try {
+
+    if (req.params.custom_url) {
+      var url = await ShareableLink.findOne({
+        customUrl: req.params.custom_url,
+      });
+      if (!url) {
+        throw new NotFound('Link not found');
+      }
+    }
+
+    if (url.user.toString() !== req.user.id) {
+      throw new Unauthorized();
+    }
+
+    // Get Shareable Link to be updated
+    if (req.params.custom_url) {
+      var url = await ShareableLink.findOneAndRemove({
+        customUrl: req.params.custom_url,
+      });
+      if (!url) {
+        throw new NotFound('Link not found');
+      }
+    }
+
+    res.json({ msg: 'Shareable Link deleted' });
   } catch (error) {
     next(error);
   }

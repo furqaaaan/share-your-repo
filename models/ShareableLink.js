@@ -4,6 +4,10 @@ const {
 } = require('./constants');
 
 const ShareableLinkSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'user',
+  },
   customUrl: {
     type: String,
     required: true,

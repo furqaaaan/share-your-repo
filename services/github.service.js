@@ -5,20 +5,8 @@ const {
 const authUtil = require('../utils/authUtil');
 const axios = require('axios');
 
-exports.getUserRepos = async (user) => {
-  let encToken = await AuthToken.findOne({
-    user: user.id,
-    host: GITHUB,
-  });
-
-  if (!encToken) {
-    // possible to redirect? we also need to tell react to update the state that the user is no longer authorized
-    throw new Unauthorized('Oauth token expired / revoked.');
-  }
-
-  const { iv, token: encryptedData } = encToken;
-  const decryptedToken = authUtil.decrypt({ iv, encryptedData });
-
+exports.getUserRepos = async (userId) => {
+  const decryptedToken = await this.getUserOauthToken(userId);
   const config = {
     headers: { Authorization: `Bearer ${decryptedToken}` },
   };
@@ -50,4 +38,21 @@ exports.getUserRepos = async (user) => {
   });
 
   return repos;
+};
+
+exports.getUserOauthToken = async (userId) => {
+  let encToken = await AuthToken.findOne({
+    user: userId,
+    host: GITHUB,
+  });
+
+  if (!encToken) {
+    // possible to redirect? we also need to tell react to update the state that the user is no longer authorized
+    throw new Unauthorized('Oauth token expired / revoked.');
+  }
+
+  const { iv, token: encryptedData } = encToken;
+  const decryptedToken = authUtil.decrypt({ iv, encryptedData });
+
+  return decryptedToken;
 };

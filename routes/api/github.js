@@ -6,8 +6,13 @@ const config = require('../../config/config');
 const AuthToken = require('../../models/AuthToken');
 const auth = require('../../middleware/auth');
 const Buffer = require('buffer').Buffer;
-const { getUserRepos } = require('../../services/github.service');
-
+const {
+  getUserRepos,
+  getUserOauthToken,
+} = require('../../services/github.service');
+const {
+  host: { GITHUB },
+} = require('../../models/constants');
 
 const clientId = config.github.clientId;
 const clientSecret = config.github.clientSecret;
@@ -65,7 +70,7 @@ router.post('/authorize', auth, async (req, res) => {
 // @access  private
 router.get('/user/repos', auth, async (req, res, next) => {
   try {
-    const repos = await getUserRepos(req.user);
+    const repos = await getUserRepos(req.user.id);
     res.json(repos);
   } catch (err) {
     console.error(err);
@@ -77,18 +82,8 @@ router.get('/user/repos', auth, async (req, res, next) => {
 // @desc    Get contents of a repo by path
 // @access  private
 router.get('/repos*', auth, async (req, res) => {
-  let encToken = await AuthToken.findOne({
-    user: req.user.id,
-    host: GITHUB,
-  });
-
-  if (!encToken) {
-    // possible to redirect? we also need to tell react to update the state that the user is no longer authorized
-    return res.status(401).json({ msg: 'Oauth token expired / revoked.' });
-  }
-
-  const { iv, token: encryptedData } = encToken;
-  const decryptedToken = authUtil.decrypt({ iv, encryptedData });
+  console.log(req);
+  const decryptedToken = await getUserOauthToken(req.user.id);
   try {
     const config = {
       headers: { Authorization: `Bearer ${decryptedToken}` },

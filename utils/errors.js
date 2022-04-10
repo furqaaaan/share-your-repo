@@ -19,7 +19,7 @@ class NotFound extends GeneralError {
 }
 
 class Unauthorized extends GeneralError {
-  constructor(message) {
+  constructor(message = 'Unauthorized') {
     super(message, 401);
   }
 }
