@@ -17,8 +17,9 @@ const {
   GeneralError,
 } = require('../../utils/errors');
 const {
-  linkStatus: { DEACTIVATED },
+  linkStatus: { DEACTIVATED, EXPIRED },
 } = require('../../models/constants');
+const checkLinkExpiry = require('../../middleware/checkLinkExpiry');
 
 // @route   POST /api/share
 // @desc    Create a custom URL to share private repos
@@ -82,6 +83,28 @@ router.post(
     }
   }
 );
+
+// @route   GET /api/share/
+// @desc    Get list of links created by user
+// @access  private
+router.get('/', auth, async (req, res, next) => {
+  try {
+    const urls = await ShareableLink.find({
+      user: req.user.id,
+    });
+
+    var today = new Date();
+    urls.forEach(async (url) => {
+      if (url.expiryDate < today) {
+        url.status = EXPIRED;
+        await url.save();
+      }
+    });
+    res.json(urls);
+  } catch (error) {
+    next(error);
+  }
+});
 
 // @route   PUT /api/share/:custom_url
 // @desc    Update Shareable Link
@@ -202,57 +225,88 @@ router.delete('/:custom_url', [auth], async (req, res, next) => {
   }
 });
 
-// @route   GET /api/share/repos/:custom_url*
-// @desc    Get contents of a repo by path
+// @route   GET /api/share/:custom_url/contents/:repo_id
+// @desc    Get contents of a repo and by filepath
 // @access  public
 // router.get('/:custom_url/contents/:owner/:repo', async (req, res, next) => {
-router.get('/:custom_url/contents/:repo_id', async (req, res, next) => {
-  try {
-    if (req.params.custom_url) {
-      var url = await ShareableLink.findOne({
-        customUrl: req.params.custom_url,
-      });
-      if (!url) {
-        throw new NotFound('Link not found');
+router.get(
+  '/:custom_url/contents/:repo_id',
+  checkLinkExpiry,
+  async (req, res, next) => {
+    try {
+      if (req.params.custom_url) {
+        var url = await ShareableLink.findOne({
+          customUrl: req.params.custom_url,
+        });
+        if (!url) {
+          throw new NotFound('Link not found');
+        }
       }
-    }
 
-    let repo_id = req.params.repo_id;
-    const repo = url.repos.find((r) => r.id == repo_id);
-    if (!repo) {
-      throw new BadRequest('Invalid repo id');
-    }
-    const decryptedToken = await getUserOauthToken(url.user.toString());
-    console.log(decryptedToken);
-    const config = {
-      headers: { Authorization: `Bearer ${decryptedToken}` },
-    };
+      let repo_id = req.params.repo_id;
+      const repo = url.repos.find((r) => r.id == repo_id);
+      if (!repo) {
+        throw new BadRequest('Invalid repo id');
+      }
+      const decryptedToken = await getUserOauthToken(url.user.toString());
+      console.log(decryptedToken);
+      const config = {
+        headers: { Authorization: `Bearer ${decryptedToken}` },
+      };
 
-    let filepath = req.query.filepath || '';
-    const response = await axios.get(
-      `https://api.github.com/repos/${repo.full_name}/contents/${filepath}`,
-      config
-    );
+      let filepath = req.query.filepath || '';
+      const response = await axios.get(
+        `https://api.github.com/repos/${repo.full_name}/contents/${filepath}`,
+        config
+      );
 
-    if (response.status !== 200) {
-      console.log(response);
-      throw new GeneralError();
-    }
+      if (response.status !== 200) {
+        console.log(response);
+        throw new GeneralError();
+      }
 
-    if (response.data.constructor === Array) {
-      const repos = response.data.map((repo) => {
-        const { name, path, type } = repo;
-        return { name, path, type };
-      });
-      res.json(repos);
-    } else if (response.data.content) {
-      let buf = Buffer.from(response.data.content, 'base64').toString('ascii');
-      res.json({ content: buf });
+      if (response.data.constructor === Array) {
+        const repos = response.data.map((repo) => {
+          const { name, path, type } = repo;
+          return { name, path, type };
+        });
+        res.json(repos);
+      } else if (response.data.content) {
+        let buf = Buffer.from(response.data.content, 'base64').toString(
+          'ascii'
+        );
+        res.json({ content: buf });
+      }
+    } catch (err) {
+      console.error(err);
+      next(err);
     }
-  } catch (err) {
-    console.error(err);
-    next(err);
   }
-});
+);
+
+// @route   GET /api/share/:custom_url/repos
+// @desc    Get repos by shareable link
+// @access  public
+// router.get('/:custom_url/contents/:owner/:repo', async (req, res, next) => {
+router.get(
+  '/:custom_url/repos',
+  checkLinkExpiry,
+  async (req, res, next) => {
+    try {
+      if (req.params.custom_url) {
+        var url = await ShareableLink.findOne({
+          customUrl: req.params.custom_url,
+        });
+        if (!url) {
+          throw new NotFound('Link not found');
+        }
+      }
+      res.json(url.repos);
+    } catch (err) {
+      console.error(err);
+      next(err);
+    }
+  }
+);
 
 module.exports = router;
